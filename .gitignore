@@ -1,0 +1,6 @@
+build/
+dist/
+spica.spec
+state.db
+*.icns
+.DS_Store

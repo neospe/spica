@@ -21,20 +21,30 @@ jobs:
           python -m pip install --upgrade pip
           pip install --no-deps -r requirements.txt
       - name: build app
-        run: flet pack spica.py --icon assets/spica-icon-512.png --name spica --product-name spica --product-version ${{ github.event.release.tag_name }} --copyright "© 2023 hexis systems GmbH"  --add-binary=${{ steps.py310.outputs.python-path }}/llama_cpp/libllama.so:llama_cpp
+        run: flet pack spica.py --icon assets/spica-icon-512.png --name spica --product-name spica --product-version ${{ github.event.release.tag_name }} --copyright "© 2023 hexis systems GmbH" --add-binary=/opt/hostedtoolcache/Python/3.10.13/x64/lib/python3.10/site-packages/llama_cpp/libllama.so:llama_cpp
+        # TODO: use "pythonLocation" env var = /opt/hostedtoolcache/Python/3.10.13/x64
       - name: package app
         run: |
-          sha256sum dist/spica > CHECKSUM
-          zip -r9 spica-${{ github.event.release.tag_name }}-linux.zip dist/spica/ CHECKSUM
+          zip -r9 spica-${{ github.event.release.tag_name }}-linux.zip dist/spica
+          sha256sum spica-${{ github.event.release.tag_name }}-linux.zip > spica-${{ github.event.release.tag_name }}-linux.sha256
       - name: upload app
         uses: actions/upload-release-asset@v1.0.1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           upload_url: ${{ github.event.release.upload_url }}
-          asset_path: spica-${{ github.event.release.tag_name }}-linux.zip
+          asset_path: ./spica-${{ github.event.release.tag_name }}-linux.zip
           asset_name: spica-${{ github.event.release.tag_name }}-linux.zip
           asset_content_type: application/zip
+      - name: upload sha256
+        uses: actions/upload-release-asset@v1.0.1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ github.event.release.upload_url }}
+          asset_path: ./spica-${{ github.event.release.tag_name }}-linux.sha256
+          asset_name: spica-${{ github.event.release.tag_name }}-linux.sha256
+          asset_content_type: text/plain
 
   build-macos:
     runs-on: macos-latest
@@ -43,27 +53,37 @@ jobs:
         uses: actions/checkout@v4
       - name: setup python
         run: |
-          wget https://www.python.org/ftp/python/3.10.9/python-3.10.9-macos12.pkg
-          sudo installer -pkg python-3.10.9-macos12.pkg -target /
+          wget https://www.python.org/ftp/python/3.10.9/python-3.10.9-macos11.pkg
+          sudo installer -pkg python-3.10.9-macos11.pkg -target /
       - name: install dependencies
         run: |
-          python -m pip install --upgrade pip
-          pip install --no-deps -r requirements.txt
+          python3 -m pip install --upgrade pip
+          pip3 install --no-deps -r requirements.txt
       - name: build app
-        run: flet pack spica.py --icon assets/spica-icon-512.png --name spica --product-name spica --product-version ${{ github.event.release.tag_name }} --copyright "© 2023 hexis systems GmbH"  --add-binary=/Library/Frameworks/Python.framework/Versions/3.10/lib/python3.10/site-packages/llama_cpp/libllama.dylib:llama_cpp
+        run: flet pack spica.py --icon assets/spica-icon-512.png --name spica --product-name spica --product-version ${{ github.event.release.tag_name }} --copyright "© 2023 hexis systems GmbH" --add-binary=/Library/Frameworks/Python.framework/Versions/3.10/lib/python3.10/site-packages/llama_cpp/libllama.dylib:llama_cpp
+        # TODO: use "pythonLocation" env var = /Library/Frameworks/Python.framework/Versions/3.10
       - name: package app
         run: |
-          sha256sum dist/spica.app > CHECKSUM
-          zip -r9 spica-${{ github.event.release.tag_name }}-macos.zip dist/spica.app/ CHECKSUM
-      - name: upload app
+          zip -r9 spica-${{ github.event.release.tag_name }}-macos.zip dist/spica.app/
+          shasum -a 256 spica-${{ github.event.release.tag_name }}-macos.zip > spica-${{ github.event.release.tag_name }}-macos.sha256
+      - name: upload zip
         uses: actions/upload-release-asset@v1.0.1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           upload_url: ${{ github.event.release.upload_url }}
-          asset_path: spica-${{ github.event.release.tag_name }}-macos.zip
+          asset_path: ./spica-${{ github.event.release.tag_name }}-macos.zip
           asset_name: spica-${{ github.event.release.tag_name }}-macos.zip
           asset_content_type: application/zip
+      - name: upload sha256
+        uses: actions/upload-release-asset@v1.0.1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ github.event.release.upload_url }}
+          asset_path: ./spica-${{ github.event.release.tag_name }}-macos.sha256
+          asset_name: spica-${{ github.event.release.tag_name }}-macos.sha256
+          asset_content_type: text/plain
 
   build-windows:
     runs-on: windows-latest
@@ -80,17 +100,27 @@ jobs:
           python -m pip install --upgrade pip
           pip install --no-deps -r requirements.txt
       - name: build app
-        run: flet pack spica.py --icon assets\spica-icon-512.png --name spica --product-name spica --product-version ${{ github.event.release.tag_name }} --copyright "© 2023 hexis systems GmbH"  --add-binary=${{ steps.py310.outputs.python-path }}\llama_cpp\libllama.dll:llama_cpp
+        run: flet pack spica.py --icon assets\spica-icon-512.png --name spica --product-name spica --product-version ${{ github.event.release.tag_name }} --copyright "\N{COPYRIGHT SIGN} 2023 hexis systems GmbH" --add-binary=C:\hostedtoolcache\windows\Python\3.10.11\x64\lib\site-packages\llama_cpp\llama.dll:llama_cpp
+        # TODO: use "pythonLocation" env var = C:\hostedtoolcache\windows\Python\3.10.11\x64
       - name: package app
         run: |
-          sha256sum dist\spica.exe > CHECKSUM
-          zip -r9 spica-${{ github.event.release.tag_name }}-windows.zip dist\spica.exe CHECKSUM
-      - name: upload app
+          tar acvf spica-${{ github.event.release.tag_name }}-windows.zip dist\spica.exe
+          certutil -hashfile spica-${{ github.event.release.tag_name }}-windows.zip SHA256 > spica-${{ github.event.release.tag_name }}-windows.sha256
+      - name: upload zip
         uses: actions/upload-release-asset@v1.0.1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           upload_url: ${{ github.event.release.upload_url }}
-          asset_path: spica-${{ github.event.release.tag_name }}-windows.zip
+          asset_path: ./spica-${{ github.event.release.tag_name }}-windows.zip
           asset_name: spica-${{ github.event.release.tag_name }}-windows.zip
           asset_content_type: application/zip
+      - name: upload sha256
+        uses: actions/upload-release-asset@v1.0.1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ github.event.release.upload_url }}
+          asset_path: ./spica-${{ github.event.release.tag_name }}-windows.sha256
+          asset_name: spica-${{ github.event.release.tag_name }}-windows.sha256
+          asset_content_type: text/plain

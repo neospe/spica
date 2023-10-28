@@ -4,7 +4,6 @@
 spica - chat ui for local llms
 
 © 2023 hexis systems GmbH
-Licensed under the MIT License.
 """
 
 import sqlite3
@@ -1332,4 +1331,4 @@ def main(page: ft.Page):
 
     page.go(routes[1][0])  # default view: sessions
 
-ft.app(target=main)           
+ft.app(target=main)

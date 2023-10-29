@@ -49,3 +49,4 @@ wcwidth==0.2.6
 websocket-client==1.6.3
 websockets==11.0.3
 pywin32-ctypes
+pefile

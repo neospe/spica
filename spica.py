@@ -61,6 +61,7 @@ class LLamaCppStream(Stream[T, U]):
         async def generate(prompt: str) -> AsyncGenerator[U, None]:
             global loop
             loop = asyncio.get_event_loop()
+            self.running = True
 
             def get_outputs() -> Iterable[str]:
                 global llamagrammar
@@ -94,7 +95,7 @@ class LLamaCppStream(Stream[T, U]):
         
         super().__init__(name, lambda input: generate(call(input)))
     
-    running = True
+    running = False
 
 class Message():
     def __init__(self, user: str, text: str):
@@ -136,7 +137,6 @@ def load_model(page):
         try:
             grammar = LlamaGrammar.from_file(grammar_path)
         except:
-            # TODO: snackbars eventually better triggered via pubsub message to dedicated function -> we wouldn't need to pass around page
             page.show_snack_bar(ft.SnackBar(ft.Text('Could not load LlamaGrammar: '+grammar_path), open=True))
     
     if not Path(state['model_path']).exists():
@@ -368,7 +368,7 @@ def main(page: ft.Page):
             if not state['tag_user'] or not state['tag_asst']:
                 page.show_snack_bar(ft.SnackBar(ft.Text('Please define user and assistant tag.'), open=True))
                 sanity = False
-        if not pr.current.value and len(state['transcript']) > 0:  # llm is already running
+        if chat_stream.running:
             page.show_snack_bar(ft.SnackBar(ft.Text('Model is generating. Please wait..'), open=True))
             sanity = False
         if not sanity:            
@@ -458,7 +458,7 @@ def main(page: ft.Page):
         if page.dialog:
             page.dialog.open = False
         
-        if not pr.current.value and data['action'] != 'delete_session':
+        if chat_stream.running and data['action'] != 'delete_session':
             page.show_snack_bar(ft.SnackBar(ft.Text('Model is generating. Please wait..'), open=True))
             return
 
@@ -519,6 +519,8 @@ def main(page: ft.Page):
             con.commit()
 
             if data['target_id'] == state['id']:
+                if chat_stream.running:
+                    chat_stream.running = False
                 res = cur.execute('SELECT * FROM state ORDER BY at DESC')
                 last_state = res.fetchone()
                 if last_state:
@@ -678,7 +680,7 @@ def main(page: ft.Page):
             page.show_snack_bar(ft.SnackBar(ft.Text('Condensation finished.'), open=True))
         
         if topic.endswith('-in'):
-            if not pr.current.value:  # llm is already running
+            if chat_stream.running:
                 page.show_snack_bar(ft.SnackBar(ft.Text('Model is generating. Please wait..'), open=True))
                 return
             
@@ -700,17 +702,15 @@ def main(page: ft.Page):
 
     def load_state(target, reload=False):
         global state
-        if not pr.current.value and len(state['transcript']) > 0:
+        if 'chat_stream' not in locals() or reload:
+            chat_stream = load_model(page)
+        if chat_stream.running:
             page.show_snack_bar(ft.SnackBar(ft.Text('Model is generating. The process can be canceled in chat view.'), open=True))
             return
         res = cur.execute('SELECT * FROM state WHERE rowid = %s' % (target))
         previous = {label: param for label, param in zip(schema_defaults.keys(), res.fetchone())}
         state = previous
         pr.current.value = len(state['transcript']) / state['model_ctx']  # llm context usage
-
-        if reload:
-            global chat_stream
-            chat_stream = load_model(page)
 
     def save_state(summary=False, insert=False):
         global state
@@ -822,7 +822,7 @@ def main(page: ft.Page):
                     ]
                 )
             else:
-                if not pr.current.value and state['model_path']:
+                if chat_stream.running:
                     suffix = cancel_button.current
                 else:
                     suffix = send_button.current

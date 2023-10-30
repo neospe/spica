@@ -15,8 +15,8 @@ from typing import AsyncGenerator, Callable, Iterable, Optional, Union, List, Ty
 from langstream.core.stream import Stream, StreamOutput
 import flet as ft
 
-import logging
-logging.basicConfig(level=logging.DEBUG)
+#import logging
+#logging.basicConfig(level=logging.DEBUG)
 
 
 # globals

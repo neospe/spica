@@ -133,7 +133,7 @@ def load_model(page):
         
     grammar = None
     grammar_path = state['model_grammar']
-    if grammar_path:
+    if grammar_path and grammar_path != 'NULL':
         try:
             grammar = LlamaGrammar.from_file(grammar_path)
         except:
@@ -176,10 +176,12 @@ schema_defaults = {
     'text_size': 14,
     'theme': 'auto',
     'tag_user_end': '',
-    'tag_asst_end': ''
+    'tag_asst_end': '',
+    'window_h': 600,
+    'window_w': 950
 }
 
-schema_sqlite = 'state (%s INTEGER PRIMARY KEY, %s TIMESTAMP DEFAULT CURRENT_TIMESTAMP, %s TEXT, %s TEXT, %s INTEGER, %s TEXT, %s TEXT, %s TEXT, %s TEXT, %s TEXT, %s REAL, %s INTEGER, %s REAL, %s REAL, %s TEXT, %s INTEGER, %s INTEGER, %s TEXT, %s TEXT, %s TEXT);' % tuple(k for k in schema_defaults.keys())
+schema_sqlite = 'state (%s INTEGER PRIMARY KEY, %s TIMESTAMP DEFAULT CURRENT_TIMESTAMP, %s TEXT, %s TEXT, %s INTEGER, %s TEXT, %s TEXT, %s TEXT, %s TEXT, %s TEXT, %s REAL, %s INTEGER, %s REAL, %s REAL, %s TEXT, %s INTEGER, %s INTEGER, %s TEXT, %s TEXT, %s TEXT, %s INTEGER, %s INTEGER);' % tuple(k for k in schema_defaults.keys())
 
 
 # flet app
@@ -207,12 +209,8 @@ def main(page: ft.Page):
 
     # page setup
     page.title = 'spica'
-    page.window_resizable = True
-    page.window_maximizable = False
     page.window_frameless = False
     page.window_title_bar_hidden = True
-    page.window_min_height = 600
-    page.window_min_width = 800
     page.scroll = ft.ScrollMode.ALWAYS
     page.auto_scroll = True
     routes = [
@@ -258,6 +256,21 @@ def main(page: ft.Page):
     optional_input1 = ft.Ref[ft.TextField]()
     optional_input2 = ft.Ref[ft.TextField]()
     
+    # window size
+    page.window_resizable = True
+    page.window_maximizable = False
+    page.window_min_height = schema_defaults['window_h']
+    page.window_min_width = schema_defaults['window_w']
+    def page_resize(e):
+        state['window_h'] = page.window_height
+        state['window_w'] = page.window_width
+        cur.execute('UPDATE state SET (window_h, window_w) = (%s, %s) WHERE rowid = %s' % (page.window_height, page.window_width, state['id']))
+        con.commit()
+
+    page.on_resize = page_resize
+    page.window_height = state['window_h']
+    page.window_width = state['window_w']
+
     # load theme
     def set_theme(value):
         if value == 'auto':
@@ -470,17 +483,17 @@ def main(page: ft.Page):
                 load_state(data['target_id'])
         
         elif data['action'] == 'new_session':
-            state = schema_defaults
+            pr.current.value = 0.0
             
             # auto-populate with last known model_path, user/asst tags
             res = cur.execute('SELECT * FROM state ORDER BY at DESC')
             last_state = res.fetchone()
             if last_state:
-                state['model_path'] = last_state[2]
-                state['tag_user'] = last_state[6]
-                state['tag_asst'] = last_state[7]
-                state['text_size'] = last_state[16]
-                state['theme'] = last_state[17]
+                state = {label: param if param != 'NULL' else None for label, param in zip(schema_defaults.keys(), last_state)}
+                state['transcript'] = ''
+                state['summary'] = ''
+            else:
+                state = schema_defaults
 
             save_state(insert=True)
 
@@ -569,10 +582,12 @@ def main(page: ft.Page):
                         value = int(value)
                 if target:
                     state[target] = value
-                    page.update()
-                if target == 'theme':
-                    page.theme_mode = set_theme(value)
-                    route_change(ft.RouteChangeEvent(route=page.route))  # reload current view
+                    if target == 'theme':
+                        page.theme_mode = set_theme(value)
+                        save_state()
+                        route_change(ft.RouteChangeEvent(route=page.route))  # reload current view
+                    else:
+                        page.update()
 
     def on_keyboard(e: ft.KeyboardEvent):
         
@@ -649,6 +664,7 @@ def main(page: ft.Page):
     def listener_stream(topic, message: StreamOutput):
         if message == '=== EOG ===':  # not message.data
             save_state()
+            chat_stream.running = False
             pr.current.value = len(state['transcript']) / state['model_ctx']
             new_message.current.suffix = send_button.current
             route_change(ft.RouteChangeEvent(route=page.route))  # reload current view (and save state)
@@ -666,6 +682,7 @@ def main(page: ft.Page):
 
     def listener_condense(topic, message):
         if topic.endswith('-out'):
+            chat_stream.running = False
             if topic == 'condense-session-out':
                 state['summary'] = message
 
@@ -702,14 +719,13 @@ def main(page: ft.Page):
 
     def load_state(target, reload=False):
         global state
-        if 'chat_stream' not in locals() or reload:
+        if 'chat_stream' not in globals() or reload:
             chat_stream = load_model(page)
         if chat_stream.running:
             page.show_snack_bar(ft.SnackBar(ft.Text('Model is generating. The process can be canceled in chat view.'), open=True))
             return
         res = cur.execute('SELECT * FROM state WHERE rowid = %s' % (target))
-        previous = {label: param for label, param in zip(schema_defaults.keys(), res.fetchone())}
-        state = previous
+        state = {label: param for label, param in zip(schema_defaults.keys(), res.fetchone())}
         pr.current.value = len(state['transcript']) / state['model_ctx']  # llm context usage
 
     def save_state(summary=False, insert=False):
@@ -725,9 +741,9 @@ def main(page: ft.Page):
         del s['id']
         s['transcript'] = s['transcript'].replace('"', '\'')
         s['summary'] = s['summary'].replace('"', '\'')
+        s['at'] = str(datetime.now())
 
         if insert:
-            del s['at']
             columns = ', '.join(s.keys())
             values = '"'+'", "'.join(s.values())+'"'
             cur.execute('INSERT INTO state (%s) VALUES (%s)' % (columns, values))
@@ -735,9 +751,8 @@ def main(page: ft.Page):
             res = cur.execute('SELECT * FROM state ORDER BY at DESC')
             last_state = res.fetchone()
             state['id'] = last_state[0]
-            state['at'] = last_state[1]
+            state['at'] = s['at']
         else:
-            s['at'] = str(datetime.now())
             columns = ', '.join(s.keys())
             values = '"'+'", "'.join(s.values())+'"'
             cur.execute('UPDATE state SET (%s) = (%s) WHERE rowid = %s' % (columns, values, row_id))
@@ -1035,6 +1050,10 @@ def main(page: ft.Page):
                             ft.TextSpan('  '+time+'\n')
                         ]
                     )
+                    if sess[9] in ['', 'NULL']:
+                        preview = sess[8].replace(sess[6], '').replace(sess[7], '').replace(sess[17], '').replace(sess[18], '')
+                    else:
+                        preview = sess[9]
 
                     tile = ft.ListTile(
                         leading=ft.ProgressRing(width=24, height=24, stroke_width=4, value=len(sess[8])/sess[4]),
@@ -1044,7 +1063,7 @@ def main(page: ft.Page):
                         ),
                         subtitle=ft.Container(
                             content=ft.Text(
-                                sess[9],
+                                preview,
                                 text_align=ft.TextAlign.LEFT,
                                 overflow=ft.TextOverflow.FADE,
                                 max_lines=2
